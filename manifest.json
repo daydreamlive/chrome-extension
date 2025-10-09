@@ -1,0 +1,47 @@
+{
+  "name": "Daydream Dreamcam",
+  "version": "1.0.0",
+  "minimum_chrome_version": "10.0",
+  "icons": {
+    "16": "icon-16.png",
+    "48": "icon-48.png",
+    "128": "icon-128.png"
+  },
+  "description": "Real-time video AI for your webcam",
+  "content_scripts": [
+    {
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "js/inject.js"
+      ],
+      "run_at": "document_start",
+      "all_frames": true
+    }
+  ],
+  "permissions": [
+    "tabs",
+    "storage"
+  ],
+  "host_permissions": [
+    "<all_urls>",
+    "https://api.daydream.live/*",
+    "https://ai.livepeer.com/*"
+  ],
+  "manifest_version": 3,
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Daydream Dreamcam Settings"
+  },
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "js/*"
+      ],
+      "matches": [
+        "*://*/*"
+      ]
+    }
+  ]
+}
