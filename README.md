@@ -1,10 +1,4 @@
-# virtual-webcam chrome extension
-
-This is a proof of concept of adding a virtual MediaDevice in a browser extension.
-
-NOTE: You can use it as a regular library, check out cam.html.
-
-![Virtual webcam](shader-cam.png)
+# Daydream Chrome Extension
 
 To use (Chromium):
 - download or clone the repo
