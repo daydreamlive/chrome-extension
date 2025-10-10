@@ -46,3 +46,40 @@ Tested with
 - Hangouts
 - Meet
 - Zoom
+
+## Packaging for Distribution
+
+To package the extension for Chrome Web Store or Firefox Add-ons submission:
+
+```bash
+./package.sh
+```
+
+This will create:
+- `build/daydream-dreamcam-chrome-v1.0.0.zip` - Ready for Chrome Web Store
+- `build/daydream-dreamcam-firefox-v1.0.0.zip` - Ready for Firefox Add-ons
+
+## Store Submission
+
+Before submitting to extension stores:
+
+1. **Review the submission guide**: See `STORE_SUBMISSION.md` for detailed instructions
+2. **Prepare privacy policy**: Host `PRIVACY.md` on a public URL (required by both stores)
+3. **Prepare screenshots**: Follow the guide in `store-listings/screenshots-checklist.md`
+4. **Review store listings**: Use the content in `store-listings/` directory
+
+For complete submission instructions, see [STORE_SUBMISSION.md](STORE_SUBMISSION.md)
+
+## Project Structure
+
+- `js/` - Extension JavaScript files
+  - `inject.js` - Content script injected into web pages
+  - `media-devices.js` - Virtual camera implementation
+  - `whip-whep-stream.js` - WHIP/WHEP streaming protocol
+  - `main.js` - Main extension logic
+- `popup.html` / `popup.js` - Extension settings UI
+- `manifest.json` - Extension manifest (Manifest V3)
+- `package.sh` - Packaging script for store submission
+- `PRIVACY.md` - Privacy policy document
+- `STORE_SUBMISSION.md` - Store submission guide
+- `store-listings/` - Store listing content and guidelines

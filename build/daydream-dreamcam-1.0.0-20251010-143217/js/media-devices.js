@@ -3,6 +3,7 @@ import { WhipWhepStream } from './whip-whep-stream.js';
 // Configuration: Choose processing mode
 const CONFIG = {
   statusApiUrl: 'https://api.daydream.live/v1/streams', // Base URL for status API
+  defaultApiKey: 'sk_XjTeFkZDCvEvzTucMWPA3ZAM61ko8PnEC4TfUKMcK73sjLK3a65G9v1zNDkQ2KXt' // Fallback API key
 };
 
 // Initialize API key on load
@@ -11,11 +12,15 @@ async function initializeApiKey() {
     console.log('Initializing API key...');
     if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.sync) {
       const result = await chrome.storage.sync.get(['apiKey']);
-      currentApiKey = result.apiKey;
+      currentApiKey = result.apiKey || CONFIG.defaultApiKey;
       console.log('API key initialized:', currentApiKey ? '[HIDDEN]' : 'none');
+    } else {
+      currentApiKey = CONFIG.defaultApiKey;
+      console.log('Using default API key (chrome.storage not available)');
     }
   } catch (error) {
     console.error('Error initializing API key:', error);
+    currentApiKey = CONFIG.defaultApiKey;
   }
 }
 
@@ -35,12 +40,17 @@ async function getApiKey() {
       console.log('Using chrome.storage.sync');
       const result = await chrome.storage.sync.get(['apiKey']);
       console.log('Storage result keys:', Object.keys(result));
-      currentApiKey = result.apiKey;
+      currentApiKey = result.apiKey || CONFIG.defaultApiKey;
       console.log('Using API key:', currentApiKey ? '[HIDDEN]' : 'none');
+      return currentApiKey;
+    } else {
+      console.warn('Chrome storage not available, using default API key');
+      currentApiKey = CONFIG.defaultApiKey;
       return currentApiKey;
     }
   } catch (error) {
     console.error('Error getting API key from storage:', error);
+    currentApiKey = CONFIG.defaultApiKey;
     return currentApiKey;
   }
 }
@@ -51,7 +61,7 @@ async function createStream() {
     console.log('Creating new stream via Daydream API...');
 
     // Use cached API key or fallback to default
-    const apiKey = currentApiKey;
+    const apiKey = currentApiKey || CONFIG.defaultApiKey;
     console.log('Using API key for stream creation:', apiKey ? '[HIDDEN]' : 'none');
 
     if (!apiKey) {

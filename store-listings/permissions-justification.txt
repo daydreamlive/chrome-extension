@@ -1,0 +1,92 @@
+# Permission Justifications for Daydream Dreamcam
+
+This document explains why each permission is required for the extension to function.
+
+## storage
+**Why it's needed:**
+The extension needs to save user preferences locally, including:
+- User's Daydream API key for authentication
+- Custom AI prompt settings for video processing
+- Active stream ID for managing ongoing video sessions
+
+This data must persist between browser sessions so users don't have to reconfigure the extension every time they use it.
+
+**What we do with it:**
+We store only user preferences using chrome.storage.sync, which synchronizes across the user's browser instances. No sensitive data is transmitted to our servers except during API authentication.
+
+## tabs
+**Why it's needed:**
+The extension needs to detect when web pages are using the getUserMedia() API to request webcam access. This allows us to inject the virtual camera functionality at the right time, before the page tries to access the webcam.
+
+**What we do with it:**
+We use the tabs permission solely to:
+1. Inject content scripts into pages that request webcam access
+2. Communicate between the popup UI and content scripts
+We do NOT track browsing history, read page contents, or monitor user activity.
+
+## host_permissions: <all_urls>
+**Why it's needed:**
+Video conferencing websites exist across the entire internet (Google Meet, Zoom, Microsoft Teams, Discord, Slack, custom platforms, etc.). Since we cannot predict which websites users will want to use the virtual camera on, we need broad host permissions to inject our virtual camera functionality wherever it's needed.
+
+**What we do with it:**
+We intercept getUserMedia() calls on websites where users want to use the AI-powered virtual camera. The extension ONLY activates when:
+1. A website explicitly requests webcam access
+2. The user has configured the extension with an API key
+
+We do NOT:
+- Read or modify page content unrelated to webcam access
+- Track user browsing
+- Inject ads or other content
+- Access any page data except the media stream APIs
+
+## host_permissions: https://api.daydream.live/*
+**Why it's needed:**
+To communicate with the Daydream API for:
+- Stream creation and management
+- AI prompt configuration
+- Stream status monitoring
+
+**What we do with it:**
+Make authenticated API calls to configure and manage video processing streams.
+
+## host_permissions: https://ai.livepeer.com/*
+**Why it's needed:**
+To connect to Livepeer's AI infrastructure for video processing via the WHIP/WHEP protocol.
+
+**What we do with it:**
+Transmit video streams to and from Livepeer's AI processing servers.
+
+---
+
+## Security Practices
+
+1. **Minimal Data Collection**: We only collect data essential for the extension's core functionality
+2. **Local Storage**: Sensitive credentials are stored locally using secure browser APIs
+3. **No Tracking**: We do not track user behavior, browsing history, or activity
+4. **Encrypted Transmission**: All network communication uses HTTPS
+5. **No Data Retention**: Video streams are processed in real-time and not stored
+
+---
+
+## Why We Don't Use activeTab Instead
+
+The activeTab permission would not work for this extension because:
+
+1. **Automatic Injection Required**: We need to inject scripts at document_start to intercept getUserMedia() before pages request webcam access
+2. **Background Operation**: The virtual camera must work without requiring users to click the extension icon on every page
+3. **Multi-Tab Support**: Users may have multiple video calls open simultaneously
+4. **Timing Critical**: By the time a user clicks the extension icon, the page may have already requested webcam access
+
+---
+
+## Privacy Commitment
+
+Despite having broad permissions, we are committed to:
+- Only accessing media stream APIs, not page content
+- Never reading, modifying, or transmitting page data unrelated to video streaming
+- Storing all credentials and preferences locally
+- Maintaining transparency about our data practices
+- Providing users full control over their settings
+
+See our complete Privacy Policy at: [Your privacy policy URL]
+
