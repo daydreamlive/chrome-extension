@@ -38,6 +38,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
         if (!apiKey) {
             showStatus('API key is required', 'error');
+            apiKeyInput.focus();
             return;
         }
 
@@ -65,27 +66,18 @@ document.addEventListener('DOMContentLoaded', function() {
                 console.log('Prompt changed, updating stream:', activeStreamId);
                 try {
                     await updateStreamPrompt(activeStreamId, prompt, apiKey);
-                    showStatus('Settings saved and stream updated!', 'success');
+                    showStatus('✓ Settings saved and stream updated successfully!', 'success');
                 } catch (error) {
                     console.error('Error updating stream prompt:', error);
-                    showStatus('Settings saved, but stream update failed', 'warning');
+                    showStatus('Settings saved, but stream update failed: ' + error.message, 'warning');
                 }
             } else {
-                showStatus('Settings not updated! ' + activeStreamId, 'success');
+                showStatus('✓ Settings saved successfully!', 'success');
             }
-
-            // Notify content scripts that settings have changed
-            chrome.runtime.sendMessage({
-                action: 'settingsUpdated',
-                settings: { apiKey: apiKey, prompt: prompt }
-            }).catch(() => {
-                // Ignore errors - content scripts might not be listening yet
-                console.log('No content scripts available to receive settings update');
-            });
 
         } catch (error) {
             console.error('Error saving settings:', error);
-            showStatus('Error saving settings', 'error');
+            showStatus('Error saving settings: ' + error.message, 'error');
         }
     }
 
@@ -93,7 +85,7 @@ document.addEventListener('DOMContentLoaded', function() {
     async function updateStreamPrompt(streamId, prompt, apiKey) {
         const url = `https://api.daydream.live/v1/streams/${streamId}`;
         
-        console.error('Updating stream prompt: ', prompt, apiKey, streamId);
+        console.log('Updating stream prompt: ', prompt, streamId);
 
         const response = await fetch(url, {
             method: 'PATCH',
@@ -114,7 +106,7 @@ document.addEventListener('DOMContentLoaded', function() {
         }
 
         const data = await response.json();
-        console.error('Stream updated successfully:', data);
+        console.log('Stream updated successfully:', data);
         return data;
     }
 
@@ -141,16 +133,24 @@ document.addEventListener('DOMContentLoaded', function() {
         statusDiv.className = `status ${type}`;
         statusDiv.style.display = 'block';
 
-        // Hide status after 3 seconds
+        // Hide status after 5 seconds
         setTimeout(() => {
             statusDiv.style.display = 'none';
-        }, 3000);
+        }, 5000);
     }
 
     // Event listeners
     saveBtn.addEventListener('click', saveSettings);
     resetBtn.addEventListener('click', resetSettings);
 
+    // Allow Enter key to save in input field
+    apiKeyInput.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') {
+            saveSettings();
+        }
+    });
+
     // Load settings on startup
     loadSettings();
 });
+

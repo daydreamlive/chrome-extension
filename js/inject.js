@@ -1,6 +1,30 @@
 'use strict';
 
-// Listen for messages from the page script to store stream ID
+console.log('[Content Script] Daydream content script loading...');
+
+// Function to send API key and prompt to page script
+async function sendSettingsToPage() {
+    try {
+        const result = await chrome.storage.sync.get(['apiKey', 'prompt']);
+        console.log('[Content Script] Sending settings to page script:', {
+            hasApiKey: !!result.apiKey,
+            hasPrompt: !!result.prompt
+        });
+        
+        window.postMessage({
+            type: 'DAYDREAM_SETTINGS_READY',
+            apiKey: result.apiKey,
+            prompt: result.prompt
+        }, '*');
+    } catch (error) {
+        console.error('[Content Script] Error sending settings to page:', error);
+    }
+}
+
+// Send settings immediately when content script loads
+sendSettingsToPage();
+
+// Listen for messages from the page script
 window.addEventListener('message', async (event) => {
     // Only accept messages from the same window
     if (event.source !== window) return;
@@ -17,7 +41,52 @@ window.addEventListener('message', async (event) => {
             console.error('[Content Script] Error storing stream ID:', error);
         }
     }
+    
+    // Handle API key requests from page script
+    if (event.data && event.data.type === 'DAYDREAM_REQUEST_API_KEY') {
+        console.log('[Content Script] Page script requesting API key');
+        
+        try {
+            const result = await chrome.storage.sync.get(['apiKey', 'prompt']);
+            console.log('[Content Script] Retrieved API key and prompt from storage');
+            
+            // Send the API key and prompt back to the page script
+            window.postMessage({
+                type: 'DAYDREAM_API_KEY_RESPONSE',
+                apiKey: result.apiKey,
+                prompt: result.prompt
+            }, '*');
+        } catch (error) {
+            console.error('[Content Script] Error retrieving API key:', error);
+            window.postMessage({
+                type: 'DAYDREAM_API_KEY_RESPONSE',
+                apiKey: null,
+                prompt: null,
+                error: error.message
+            }, '*');
+        }
+    }
+    
+    // Handle ready signal from page script
+    if (event.data && event.data.type === 'DAYDREAM_PAGE_READY') {
+        console.log('[Content Script] Page script is ready, sending settings');
+        sendSettingsToPage();
+    }
 });
+
+// Listen for storage changes and notify the page script
+chrome.storage.onChanged.addListener((changes, areaName) => {
+    if (areaName === 'sync' && (changes.apiKey || changes.prompt)) {
+        console.log('[Content Script] API key or prompt changed, notifying page script');
+        window.postMessage({
+            type: 'DAYDREAM_SETTINGS_UPDATED',
+            apiKey: changes.apiKey?.newValue,
+            prompt: changes.prompt?.newValue
+        }, '*');
+    }
+});
+
+console.log('[Content Script] Message listeners set up');
 
 const script = document.createElement('script');
 script.setAttribute("type", "module");

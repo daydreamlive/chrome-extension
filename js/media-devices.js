@@ -5,58 +5,120 @@ const CONFIG = {
   statusApiUrl: 'https://api.daydream.live/v1/streams', // Base URL for status API
 };
 
-// Initialize API key on load
-async function initializeApiKey() {
-  try {
-    console.log('Initializing API key...');
-    if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.sync) {
-      const result = await chrome.storage.sync.get(['apiKey']);
-      currentApiKey = result.apiKey;
-      console.log('API key initialized:', currentApiKey ? '[HIDDEN]' : 'none');
-    }
-  } catch (error) {
-    console.error('Error initializing API key:', error);
-  }
-}
-
-// Function to get API key from storage or memory
+// Function to get API key from content script
 async function getApiKey() {
   try {
     // If we already have an API key in memory, use it
     if (currentApiKey) {
-      console.log('Using cached API key');
+      console.log('[Page Script] Using cached API key');
       return currentApiKey;
     }
 
-    console.log('Fetching API key from storage...');
-
-    // Check if chrome.storage is available (content script context)
-    if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.sync) {
-      console.log('Using chrome.storage.sync');
-      const result = await chrome.storage.sync.get(['apiKey']);
-      console.log('Storage result keys:', Object.keys(result));
-      currentApiKey = result.apiKey;
-      console.log('Using API key:', currentApiKey ? '[HIDDEN]' : 'none');
-      return currentApiKey;
+    // If settings have been initialized but there's no API key, return null immediately
+    if (settingsInitialized) {
+      console.log('[Page Script] Settings initialized but no API key found');
+      return null;
     }
+
+    console.log('[Page Script] Waiting for settings from content script...');
+
+    // Wait for settings to be initialized
+    return new Promise((resolve, reject) => {
+      let attempts = 0;
+      const maxAttempts = 20; // 2 seconds total (20 * 100ms)
+      
+      const checkSettings = () => {
+        attempts++;
+        
+        if (currentApiKey || settingsInitialized) {
+          console.log('[Page Script] Settings received, API key:', currentApiKey ? '[HIDDEN]' : 'none');
+          resolve(currentApiKey);
+          return;
+        }
+        
+        if (attempts >= maxAttempts) {
+          console.error('[Page Script] Timeout waiting for settings from content script');
+          console.log('[Page Script] Attempting explicit request...');
+          
+          // Try explicit request as fallback
+          requestApiKeyExplicitly()
+            .then(resolve)
+            .catch(reject);
+          return;
+        }
+        
+        // Check again in 100ms
+        setTimeout(checkSettings, 100);
+      };
+      
+      checkSettings();
+    });
   } catch (error) {
-    console.error('Error getting API key from storage:', error);
-    return currentApiKey;
+    console.error('[Page Script] Error getting API key:', error);
+    throw error;
   }
+}
+
+// Fallback function to explicitly request API key
+function requestApiKeyExplicitly() {
+  console.log('[Page Script] Sending explicit API key request...');
+  
+  return new Promise((resolve, reject) => {
+    const timeoutId = setTimeout(() => {
+      console.error('[Page Script] Timeout waiting for explicit API key response');
+      reject(new Error('Timeout waiting for API key. Please reload the page and try again.'));
+    }, 3000);
+
+    const messageHandler = (event) => {
+      if (event.source !== window) return;
+      
+      if (event.data && event.data.type === 'DAYDREAM_API_KEY_RESPONSE') {
+        clearTimeout(timeoutId);
+        window.removeEventListener('message', messageHandler);
+        
+        if (event.data.error) {
+          console.error('[Page Script] Error getting API key:', event.data.error);
+          reject(new Error(event.data.error));
+        } else {
+          currentApiKey = event.data.apiKey;
+          currentPrompt = event.data.prompt;
+          settingsInitialized = true;
+          console.log('[Page Script] API key received via explicit request:', currentApiKey ? '[HIDDEN]' : 'none');
+          resolve(currentApiKey);
+        }
+      }
+    };
+
+    window.addEventListener('message', messageHandler);
+    
+    // Send request to content script
+    window.postMessage({
+      type: 'DAYDREAM_REQUEST_API_KEY'
+    }, '*');
+  });
 }
 
 // Function to create a new stream via Daydream API
 async function createStream() {
   try {
-    console.log('Creating new stream via Daydream API...');
+    console.log('[Page Script] Creating new stream via Daydream API...');
 
-    // Use cached API key or fallback to default
-    const apiKey = currentApiKey;
-    console.log('Using API key for stream creation:', apiKey ? '[HIDDEN]' : 'none');
+    // Get API key from content script
+    const apiKey = await getApiKey();
+    console.log('[Page Script] Using API key for stream creation:', apiKey ? '[HIDDEN]' : 'none');
 
     if (!apiKey) {
-      throw new Error('No API key available. Please set your API key in the extension settings.');
+      const errorMsg = 'No API key available. Please configure your API key:\n' +
+                      '1. Right-click the extension icon → Options\n' +
+                      '2. Enter your API key from app.daydream.live\n' +
+                      '3. Save and reload this page';
+      console.error('[Page Script]', errorMsg);
+      throw new Error(errorMsg);
     }
+    
+    // Use the prompt from settings or a default
+    const prompt = currentPrompt || "Apply a subtle beauty filter and enhance colors";
+    console.log('Using prompt for stream creation:', prompt);
 
     const response = await fetch(`${CONFIG.statusApiUrl}`, {
       method: 'POST',
@@ -71,7 +133,7 @@ async function createStream() {
           "delta": 0.7,
           "width": 512,
           "height": 512,
-          "prompt": "studio ghibli, flat colors, 2d, anime",
+          "prompt": prompt,
           "model_id": "Lykon/dreamshaper-8",
           "lora_dict": null,
           "ip_adapter": {
@@ -175,8 +237,13 @@ async function createStream() {
 let activeProcessor = null;
 let processorCreationTime = null;
 
-// Store current API key in memory for faster access
+// Store current API key and prompt in memory for faster access
 let currentApiKey = null;
+let currentPrompt = null;
+
+// Track if settings have been initialized
+let settingsInitialized = false;
+let settingsInitPromise = null;
 
 function monkeyPatchMediaDevices() {
 
@@ -320,45 +387,28 @@ function monkeyPatchMediaDevices() {
     return res;
   };
 
-  // Listen for API key updates from popup
-  if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage) {
-    chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-      if (message.action === 'settingsUpdated' && message.settings) {
-        console.log('Received settings update:', message.settings);
-        if (message.settings.apiKey) {
-          currentApiKey = message.settings.apiKey;
-          console.log('API key updated in memory');
-        }
-        // Also refresh from storage in case there are other settings
-        refreshApiKeyFromStorage();
-        sendResponse({ success: true });
+  // Listen for settings from content script
+  window.addEventListener('message', (event) => {
+    if (event.source !== window) return;
+    
+    // Handle initial settings or updates
+    if (event.data && (event.data.type === 'DAYDREAM_SETTINGS_READY' || event.data.type === 'DAYDREAM_SETTINGS_UPDATED')) {
+      console.log('[Page Script] Received settings from content script:', event.data.type);
+      if (event.data.apiKey !== undefined) {
+        currentApiKey = event.data.apiKey;
+        console.log('[Page Script] API key updated in memory:', currentApiKey ? '[HIDDEN]' : 'none');
       }
-    });
-  }
-
-  // Function to refresh API key from storage
-  async function refreshApiKeyFromStorage() {
-    try {
-      if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.sync) {
-        const result = await chrome.storage.sync.get(['apiKey']);
-        currentApiKey = result.apiKey || CONFIG.defaultApiKey;
-        console.log('API key refreshed from storage');
+      if (event.data.prompt !== undefined) {
+        currentPrompt = event.data.prompt;
+        console.log('[Page Script] Prompt updated in memory:', currentPrompt);
       }
-    } catch (error) {
-      console.error('Error refreshing API key from storage:', error);
+      settingsInitialized = true;
     }
-  }
-
-  // Initialize API key on load
-  initializeApiKey().then(() => {
-    console.log('API key initialization completed');
-    // Also refresh from storage to ensure we have the latest value
-    return refreshApiKeyFromStorage();
-  }).then(() => {
-    console.log('API key refresh completed');
-  }).catch((error) => {
-    console.error('Error during initialization:', error);
   });
+
+  // Signal to content script that page script is ready
+  console.log('[Page Script] Signaling ready to content script');
+  window.postMessage({ type: 'DAYDREAM_PAGE_READY' }, '*');
 
   console.log('VIRTUAL WEBCAM INSTALLED.');
   console.log('MediaDevices prototype methods:', Object.getOwnPropertyNames(MediaDevices.prototype));
