@@ -306,7 +306,7 @@ function monkeyPatchMediaDevices() {
           width: args[0].video.width,
           height: args[0].video.height,
         },
-        audio: args[0].audio || true, // Pass through audio request from app
+        audio: args[0].audio, // Respect caller's audio request without forcing capture
       };
       const res = await getUserMediaFn.call(
         mediaDevices,

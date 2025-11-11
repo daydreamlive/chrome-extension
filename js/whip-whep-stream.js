@@ -38,6 +38,16 @@ class WhipWhepStream {
     // Create initial output stream from canvas (video only)
     this.outputStream = this.canvas.captureStream(30); // 30 fps
 
+    // Keep a reference to the canvas video track
+    this.canvasTrack = this.outputStream.getVideoTracks()[0];
+
+    // Configure the canvas track for motion video and stable delivery
+    this.configureCanvasTrack(this.canvasTrack, 30);
+
+    // Heartbeat pump to push frames even when background throttles rAF
+    // This helps remote peers continue receiving frames rather than showing an avatar
+    this.startFramePump(30);
+
     // Start the update loop immediately to ensure loading screen is visible
     console.log("Starting initial update loop");
     this.update();
@@ -58,6 +68,11 @@ class WhipWhepStream {
 
       // Update our reference
       this.outputStream = freshStream;
+      this.canvasTrack = this.outputStream.getVideoTracks()[0];
+
+      // Configure the new canvas track and ensure frame pumping continues
+      this.configureCanvasTrack(this.canvasTrack, 30);
+      this.startFramePump(30);
 
       // Set up monitoring for the new video track
       this.outputStream.getVideoTracks().forEach(track => {
@@ -96,6 +111,51 @@ class WhipWhepStream {
     
     // Initialize connections
     this.init();
+  }
+
+  configureCanvasTrack(track, fps) {
+    try {
+      if (!track) return;
+      // Hint that this is motion video (not text or detail)
+      if ('contentHint' in track) {
+        track.contentHint = 'motion';
+      }
+      // Try to honor desired frame rate
+      if (track.applyConstraints) {
+        track.applyConstraints({ frameRate: fps }).catch((e) => {
+          console.warn("Unable to apply canvas track constraints:", e);
+        });
+      }
+      // Basic diagnostics
+      console.log(`Configured canvas track: contentHint=${track.contentHint || 'n/a'}`);
+    } catch (e) {
+      console.warn("Error configuring canvas track:", e);
+    }
+  }
+
+  startFramePump(fps) {
+    // Clear any existing pump before starting a new one
+    if (this.framePumpIntervalId) {
+      clearInterval(this.framePumpIntervalId);
+      this.framePumpIntervalId = null;
+    }
+    const intervalMs = Math.max(10, Math.floor(1000 / (fps || 30)));
+    // Only start if we have a canvas track that supports requestFrame
+    const track = this.canvasTrack;
+    if (!track || typeof track.requestFrame !== 'function') {
+      return;
+    }
+    this.framePumpIntervalId = setInterval(() => {
+      try {
+        // Push the current canvas bitmap even if rAF is throttled/backgrounded
+        track.requestFrame();
+      } catch (e) {
+        // If requestFrame fails (e.g., track stopped), stop the pump
+        console.warn("requestFrame failed; stopping frame pump:", e);
+        clearInterval(this.framePumpIntervalId);
+        this.framePumpIntervalId = null;
+      }
+    }, intervalMs);
   }
 
   drawLoadingState() {
@@ -585,11 +645,22 @@ class WhipWhepStream {
       };
       draw();
     });
+
+    // Ensure the canvas track remains configured/pumped in passthrough
+    if (this.canvasTrack) {
+      this.configureCanvasTrack(this.canvasTrack, 30);
+      this.startFramePump(30);
+    }
   }
 
   destroy() {
     console.log("Destroying WhipWhepStream");
     this.destroyed = true;
+    // Stop frame pump if running
+    if (this.framePumpIntervalId) {
+      clearInterval(this.framePumpIntervalId);
+      this.framePumpIntervalId = null;
+    }
     
     // Stop all tracks in the output stream
     this.outputStream.getTracks().forEach(track => {
