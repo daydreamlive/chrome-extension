@@ -1,0 +1,44 @@
+# Daydream Chrome Extension - Project Context
+
+## Project Overview
+This project contains a Chrome plugin that takes the webcam feed, sends it off to an external service "Daydream" that applies some transformations and then pipes the output of that into a new virtual camera that can be used in e.g Google Meet calls.
+
+## Core Functionality
+- **Virtual Camera**: Patches the MediaDevices API to inject a "Daydream Dreamcam" virtual camera device
+- **AI Video Processing**: Uses WHIP/WHEP protocols to stream video to Daydream's AI servers for real-time processing
+- **Audio Passthrough**: Only video is processed; microphone audio passes through directly for low latency
+- **Cross-Browser**: Works on Chromium-based browsers (Chrome, Edge, Brave) and Firefox
+
+## Architecture
+
+### File Structure
+- `js/inject.js` - Content script that bridges page scripts with Chrome extension APIs (runs in page context)
+- `js/media-devices.js` - Core implementation that patches MediaDevices API and creates virtual camera
+- `js/whip-whep-stream.js` - WHIP/WHEP streaming protocol implementation for video streaming
+- `js/main.js` - Main entry point that initializes the MediaDevices patching
+- `popup.html/js` - Quick settings popup UI
+- `options.html/js` - Full extension settings page
+- `manifest.json` - Extension manifest (Manifest V3)
+
+### How It Works
+1. Content script (`inject.js`) runs at document_start and injects page scripts
+2. Page scripts patch `navigator.mediaDevices.getUserMedia()` to intercept camera requests
+3. When "Daydream Dreamcam" is selected, it:
+   - Captures video from the user's physical camera
+   - Publishes video (only) to WHIP endpoint
+   - Polls status API until stream is ready
+   - Subscribes to processed video via WHEP
+   - Combines processed video with original microphone audio
+   - Returns the combined stream as a MediaStream
+
+### Key Technologies
+- **WHIP/WHEP**: WebRTC protocols for streaming video to/from servers
+- **MediaDevices API**: Browser API for accessing cameras/microphones
+- **Chrome Extension APIs**: Storage, messaging, content scripts
+- **WebRTC**: For handling MediaStreams and video processing
+
+## Configuration
+- **API Key**: Required from app.daydream.live, stored in chrome.storage.sync
+- **AI Prompt**: Customization of output effect stored in chrome.storage.sync
+- **Status API**: `https://api.daydream.live/v1/streams` (base URL)
+- **Camera Selection**: Filters out virtual cameras, prefers "Macbook" cameras, falls back to first physical camera

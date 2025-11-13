@@ -315,16 +315,16 @@ function monkeyPatchMediaDevices() {
       if (res) {
         const now = Date.now();
         
-        // Reuse existing processor if it was created recently (within 10 seconds) and is ready or processing
-        // This handles Google Meet's multiple rapid getUserMedia calls but ensures the processor is stable
+        // Reuse existing processor if it was created recently (within 10 seconds) and is stable
+        // This prevents creating multiple streams when Google Meet calls getUserMedia multiple times
         if (activeProcessor && processorCreationTime && (now - processorCreationTime) < 10000) {
           // Check if processor is in a good state (ready, processing, or connecting but not failed)
-          const isProcessorStable = activeProcessor &&
-            !activeProcessor.destroyed &&
+          const isProcessorStable = !activeProcessor.destroyed &&
             activeProcessor.loadingState !== 'error' &&
             (activeProcessor.loadingState === 'ready' ||
              activeProcessor.loadingState === 'processing' ||
-             activeProcessor.loadingState === 'connecting');
+             activeProcessor.loadingState === 'connecting' ||
+             activeProcessor.loadingState === 'initializing');
 
           if (isProcessorStable) {
             console.log(`[${timestamp}] Reusing existing WhipWhepStream processor (created ${now - processorCreationTime}ms ago) - State: ${activeProcessor.loadingState}`);
@@ -343,22 +343,24 @@ function monkeyPatchMediaDevices() {
           if (activeProcessor.destroy) {
             activeProcessor.destroy();
           }
+          activeProcessor = null;
+          processorCreationTime = null;
         }
         
-        console.log(`[${timestamp}] Creating new WhipWhepStream processor`);
+        console.log(`[${timestamp}] Creating new WhipWhepStream processor with new stream`);
 
         try {
-          // Create a new stream dynamically
+          // Create a new stream via API when starting the plugin or when old processor is invalid
           const streamConfig = await createStream();
-          console.log(`[${timestamp}] Created stream with ID: ${streamConfig.streamId}`);
+          console.log(`[${timestamp}] Created new stream with ID: ${streamConfig.streamId}`);
 
-          // Post message to content script to store the stream ID
+          // Post message to content script to store the new stream ID
           // (Page scripts don't have access to chrome.storage, so we use message passing)
           window.postMessage({
             type: 'DAYDREAM_STREAM_CREATED',
             streamId: streamConfig.streamId
           }, '*');
-          console.log(`[${timestamp}] Posted stream ID to content script:`, streamConfig.streamId);
+          console.log(`[${timestamp}] Posted new stream ID to content script:`, streamConfig.streamId);
 
           activeProcessor = new WhipWhepStream(
               res,
