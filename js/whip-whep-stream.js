@@ -18,11 +18,17 @@ class WhipWhepStream {
 
     // Create a canvas to receive the WHEP stream
     this.canvas = document.createElement("canvas");
-    // Set default canvas size (will be updated when video starts)
+    // Set default canvas size (will be updated to match input stream aspect ratio)
     this.canvas.width = 1280;
     this.canvas.height = 720;
     this.video = document.createElement("video");
     this.ctx = this.canvas.getContext('2d');
+    
+    // Store input video dimensions for proper canvas sizing
+    this.inputVideoWidth = null;
+    this.inputVideoHeight = null;
+    this.processedVideoWidth = null;
+    this.processedVideoHeight = null;
 
     // Ensure canvas is properly initialized and visible
     console.log("Canvas created:", this.canvas.width, "x", this.canvas.height);
@@ -101,12 +107,25 @@ class WhipWhepStream {
       this.outputStream.addTrack(track);
     });
     
-    // Monitor input video tracks
+    // Monitor input video tracks and get dimensions
     stream.getVideoTracks().forEach(track => {
       console.log("Input video track:", track.label, "- enabled:", track.enabled);
       track.onended = () => {
         console.warn("Input video track ended!");
       };
+      
+      // Get input video dimensions from track settings
+      if (track.getSettings) {
+        const settings = track.getSettings();
+        if (settings.width && settings.height) {
+          this.inputVideoWidth = settings.width;
+          this.inputVideoHeight = settings.height;
+          // Update canvas to match input aspect ratio
+          this.canvas.width = this.inputVideoWidth;
+          this.canvas.height = this.inputVideoHeight;
+          console.log(`Input video dimensions: ${this.inputVideoWidth}x${this.inputVideoHeight}, canvas set to match`);
+        }
+      }
     });
     
     // Initialize connections
@@ -187,24 +206,6 @@ class WhipWhepStream {
       this.ctx.restore();
     } catch (error) {
       console.error("Error drawing loading state:", error);
-    }
-  }
-
-
-  getSubMessage() {
-    switch (this.loadingState) {
-      case 'initializing':
-        return 'Setting up camera connection...';
-      case 'connecting':
-        return 'Connecting to AI processing service...';
-      case 'processing':
-        return 'Firing up some 4090s...';
-      case 'ready':
-        return 'Virtual camera ready!';
-      case 'error':
-        return 'Connection error - check console for details';
-      default:
-        return 'Please wait...';
     }
   }
 
@@ -413,9 +414,21 @@ class WhipWhepStream {
 
         // Set up the playing event listener
         this.video.onplaying = () => {
-          console.log(`Video dimensions: ${this.video.videoWidth}x${this.video.videoHeight}`);
-          this.canvas.width = this.video.videoWidth;
-          this.canvas.height = this.video.videoHeight;
+          console.log(`Processed video dimensions: ${this.video.videoWidth}x${this.video.videoHeight}`);
+          this.processedVideoWidth = this.video.videoWidth;
+          this.processedVideoHeight = this.video.videoHeight;
+          
+          // Keep canvas at input dimensions (don't resize to match square video)
+          // This ensures proper aspect ratio for preview
+          if (!this.inputVideoWidth || !this.inputVideoHeight) {
+            // Fallback: use default dimensions if input dimensions not available
+            this.canvas.width = 1280;
+            this.canvas.height = 720;
+          } else {
+            this.canvas.width = this.inputVideoWidth;
+            this.canvas.height = this.inputVideoHeight;
+          }
+          console.log(`Canvas dimensions: ${this.canvas.width}x${this.canvas.height} (input: ${this.inputVideoWidth}x${this.inputVideoHeight}, processed: ${this.processedVideoWidth}x${this.processedVideoHeight})`);
 
           // Update loading state to ready
           this.loadingState = 'ready';
@@ -507,18 +520,24 @@ class WhipWhepStream {
       }
     } else if (this.video.readyState >= this.video.HAVE_CURRENT_DATA) {
       try {
-        // Save current context state for flipping
-        this.ctx.save();
+        // Clear canvas first
+        this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+        
+        // Calculate centering for square video within wider canvas
+        const videoWidth = this.processedVideoWidth || this.video.videoWidth;
+        const videoHeight = this.processedVideoHeight || this.video.videoHeight;
+        
+        // Center the video within the canvas
+        // Scale to fit while maintaining aspect ratio
+        const scale = Math.min(this.canvas.width / videoWidth, this.canvas.height / videoHeight);
+        const scaledWidth = videoWidth * scale;
+        const scaledHeight = videoHeight * scale;
+        // Calculate center position
+        const centerX = (this.canvas.width - scaledWidth) / 2;
+        const centerY = (this.canvas.height - scaledHeight) / 2;
 
-        // Apply horizontal flip to compensate for Google Meet's mirroring
-        this.ctx.scale(-1, 1);
-        this.ctx.translate(-this.canvas.width, 0);
-
-        // Draw the video frame
-        this.ctx.drawImage(this.video, 0, 0, this.canvas.width, this.canvas.height);
-
-        // Restore context state
-        this.ctx.restore();
+        // Draw the video frame centered and scaled (no flip - Google Meet handles mirroring)
+        this.ctx.drawImage(this.video, centerX, centerY, scaledWidth, scaledHeight);
 
         // Log first few frames
         if (!this.frameCount) this.frameCount = 0;
@@ -605,18 +624,8 @@ class WhipWhepStream {
 
       const draw = () => {
         if (this.loadingState === 'ready') {
-          // Save current context state for flipping
-          ctx.save();
-
-          // Apply horizontal flip to compensate for Google Meet's mirroring
-          ctx.scale(-1, 1);
-          ctx.translate(-this.canvas.width, 0);
-
-          // Draw the video frame
+          // Draw the video frame (no flip - Google Meet handles mirroring)
           ctx.drawImage(video, 0, 0);
-
-          // Restore context state
-          ctx.restore();
         }
         requestAnimationFrame(draw);
       };

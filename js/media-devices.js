@@ -244,7 +244,6 @@ let currentPrompt = null;
 
 // Track if settings have been initialized
 let settingsInitialized = false;
-let settingsInitPromise = null;
 
 function monkeyPatchMediaDevices() {
 
