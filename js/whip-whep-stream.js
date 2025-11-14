@@ -160,8 +160,6 @@ class WhipWhepStream {
 
   drawLoadingState() {
     try {
-      console.log(`Drawing loading state: ${this.loadingState} on canvas ${this.canvas.width}x${this.canvas.height}`);
-
       if (!this.ctx) {
         console.error("Canvas context not available!");
         return;
@@ -182,32 +180,11 @@ class WhipWhepStream {
       // Save current context state for flipping
       this.ctx.save();
 
-      // Apply horizontal flip to compensate for Google Meet's mirroring
-      this.ctx.scale(-1, 1);
-      this.ctx.translate(-this.canvas.width, 0);
-
-      // Draw loading message
-      this.ctx.fillStyle = '#ffffff';
-      this.ctx.textAlign = 'center';
-      this.ctx.textBaseline = 'middle';
-
-      // Main loading message
-      this.ctx.font = 'bold 42px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-      this.ctx.fillText(this.loadingMessage, this.canvas.width / 2, this.canvas.height / 2 - 30);
-
-      // Sub message with current state
-      this.ctx.font = '30px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-      this.ctx.fillStyle = '#cccccc';
-      const subMessage = this.getSubMessage();
-      this.ctx.fillText(subMessage, this.canvas.width / 2, this.canvas.height / 2 + 20);
-
       // Draw a simple loading spinner (animated dots)
       this.drawLoadingSpinner();
 
       // Restore context state
       this.ctx.restore();
-
-      console.log("Loading state drawn successfully");
     } catch (error) {
       console.error("Error drawing loading state:", error);
     }
@@ -233,8 +210,8 @@ class WhipWhepStream {
 
   drawLoadingSpinner() {
     const centerX = this.canvas.width / 2;
-    const centerY = this.canvas.height / 2 + 110;
-    const radius = 30;
+    const centerY = this.canvas.height / 2;
+    const radius = 50;
     const dotCount = 12;
     const dotRadius = 4;
 
