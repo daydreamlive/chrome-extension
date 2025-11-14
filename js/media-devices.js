@@ -129,7 +129,7 @@ async function createStream() {
       body: JSON.stringify({
         "pipeline_id": "pip_SD15",
         "pipeline_params": {
-          "seed": 529990,
+          "seed": 42,
           "delta": 0.7,
           "width": 512,
           "height": 512,
@@ -138,16 +138,15 @@ async function createStream() {
           "lora_dict": null,
           "ip_adapter": {
             "type": "regular",
-            "scale": 0.8,
-            "enabled": true,
-            "weight_type": "linear"
+            "scale": 0.5,
+            "enabled": true
           },
           "controlnets": [
             {
               "enabled": true,
               "model_id": "lllyasviel/control_v11f1p_sd15_depth",
               "preprocessor": "depth_tensorrt",
-              "conditioning_scale": 0.62,
+              "conditioning_scale": 0.59,
               "preprocessor_params": {},
               "control_guidance_end": 1,
               "control_guidance_start": 0
@@ -158,7 +157,7 @@ async function createStream() {
               "preprocessor": "feedback",
               "conditioning_scale": 0,
               "preprocessor_params": {
-                "feedback_strength": 0
+                "feedback_strength": 0.5
               },
               "control_guidance_end": 1,
               "control_guidance_start": 0
@@ -167,7 +166,7 @@ async function createStream() {
               "enabled": true,
               "model_id": "lllyasviel/control_v11p_sd15_canny",
               "preprocessor": "canny",
-              "conditioning_scale": 0,
+              "conditioning_scale": 0.27,
               "preprocessor_params": {
                 "low_threshold": 100,
                 "high_threshold": 200
@@ -180,19 +179,21 @@ async function createStream() {
           "acceleration": "tensorrt",
           "do_add_noise": true,
           "t_index_list": [
-            3,
-            8,
-            12,
-            17
+            11,
+            17,
+            23,
+            29
           ],
           "use_lcm_lora": true,
           "guidance_scale": 1,
-          "negative_prompt": "blurry, low quality, flat",
+          "negative_prompt": "blurry, low quality, flat, 2d",
+          "use_safety_checker": true,
           "num_inference_steps": 50,
           "use_denoising_batch": true,
           "normalize_seed_weights": true,
           "normalize_prompt_weights": true,
           "seed_interpolation_method": "linear",
+          "ip_adapter_style_image_url": "https://storage.googleapis.com/thom-vod-testing/style-presets/default_preset.png",
           "enable_similar_image_filter": false,
           "prompt_interpolation_method": "linear",
           "similar_image_filter_threshold": 0.98,
@@ -243,7 +244,6 @@ let currentPrompt = null;
 
 // Track if settings have been initialized
 let settingsInitialized = false;
-let settingsInitPromise = null;
 
 function monkeyPatchMediaDevices() {
 
@@ -306,7 +306,7 @@ function monkeyPatchMediaDevices() {
           width: args[0].video.width,
           height: args[0].video.height,
         },
-        audio: args[0].audio || true, // Pass through audio request from app
+        audio: args[0].audio, // Respect caller's audio request without forcing capture
       };
       const res = await getUserMediaFn.call(
         mediaDevices,
@@ -315,16 +315,16 @@ function monkeyPatchMediaDevices() {
       if (res) {
         const now = Date.now();
         
-        // Reuse existing processor if it was created recently (within 10 seconds) and is ready or processing
-        // This handles Google Meet's multiple rapid getUserMedia calls but ensures the processor is stable
+        // Reuse existing processor if it was created recently (within 10 seconds) and is stable
+        // This prevents creating multiple streams when Google Meet calls getUserMedia multiple times
         if (activeProcessor && processorCreationTime && (now - processorCreationTime) < 10000) {
           // Check if processor is in a good state (ready, processing, or connecting but not failed)
-          const isProcessorStable = activeProcessor &&
-            !activeProcessor.destroyed &&
+          const isProcessorStable = !activeProcessor.destroyed &&
             activeProcessor.loadingState !== 'error' &&
             (activeProcessor.loadingState === 'ready' ||
              activeProcessor.loadingState === 'processing' ||
-             activeProcessor.loadingState === 'connecting');
+             activeProcessor.loadingState === 'connecting' ||
+             activeProcessor.loadingState === 'initializing');
 
           if (isProcessorStable) {
             console.log(`[${timestamp}] Reusing existing WhipWhepStream processor (created ${now - processorCreationTime}ms ago) - State: ${activeProcessor.loadingState}`);
@@ -343,22 +343,24 @@ function monkeyPatchMediaDevices() {
           if (activeProcessor.destroy) {
             activeProcessor.destroy();
           }
+          activeProcessor = null;
+          processorCreationTime = null;
         }
         
-        console.log(`[${timestamp}] Creating new WhipWhepStream processor`);
+        console.log(`[${timestamp}] Creating new WhipWhepStream processor with new stream`);
 
         try {
-          // Create a new stream dynamically
+          // Create a new stream via API when starting the plugin or when old processor is invalid
           const streamConfig = await createStream();
-          console.log(`[${timestamp}] Created stream with ID: ${streamConfig.streamId}`);
+          console.log(`[${timestamp}] Created new stream with ID: ${streamConfig.streamId}`);
 
-          // Post message to content script to store the stream ID
+          // Post message to content script to store the new stream ID
           // (Page scripts don't have access to chrome.storage, so we use message passing)
           window.postMessage({
             type: 'DAYDREAM_STREAM_CREATED',
             streamId: streamConfig.streamId
           }, '*');
-          console.log(`[${timestamp}] Posted stream ID to content script:`, streamConfig.streamId);
+          console.log(`[${timestamp}] Posted new stream ID to content script:`, streamConfig.streamId);
 
           activeProcessor = new WhipWhepStream(
               res,

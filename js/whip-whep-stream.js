@@ -18,11 +18,17 @@ class WhipWhepStream {
 
     // Create a canvas to receive the WHEP stream
     this.canvas = document.createElement("canvas");
-    // Set default canvas size (will be updated when video starts)
+    // Set default canvas size (will be updated to match input stream aspect ratio)
     this.canvas.width = 1280;
     this.canvas.height = 720;
     this.video = document.createElement("video");
     this.ctx = this.canvas.getContext('2d');
+    
+    // Store input video dimensions for proper canvas sizing
+    this.inputVideoWidth = null;
+    this.inputVideoHeight = null;
+    this.processedVideoWidth = null;
+    this.processedVideoHeight = null;
 
     // Ensure canvas is properly initialized and visible
     console.log("Canvas created:", this.canvas.width, "x", this.canvas.height);
@@ -37,6 +43,16 @@ class WhipWhepStream {
 
     // Create initial output stream from canvas (video only)
     this.outputStream = this.canvas.captureStream(30); // 30 fps
+
+    // Keep a reference to the canvas video track
+    this.canvasTrack = this.outputStream.getVideoTracks()[0];
+
+    // Configure the canvas track for motion video and stable delivery
+    this.configureCanvasTrack(this.canvasTrack, 30);
+
+    // Heartbeat pump to push frames even when background throttles rAF
+    // This helps remote peers continue receiving frames rather than showing an avatar
+    this.startFramePump(30);
 
     // Start the update loop immediately to ensure loading screen is visible
     console.log("Starting initial update loop");
@@ -58,6 +74,11 @@ class WhipWhepStream {
 
       // Update our reference
       this.outputStream = freshStream;
+      this.canvasTrack = this.outputStream.getVideoTracks()[0];
+
+      // Configure the new canvas track and ensure frame pumping continues
+      this.configureCanvasTrack(this.canvasTrack, 30);
+      this.startFramePump(30);
 
       // Set up monitoring for the new video track
       this.outputStream.getVideoTracks().forEach(track => {
@@ -86,22 +107,78 @@ class WhipWhepStream {
       this.outputStream.addTrack(track);
     });
     
-    // Monitor input video tracks
+    // Monitor input video tracks and get dimensions
     stream.getVideoTracks().forEach(track => {
       console.log("Input video track:", track.label, "- enabled:", track.enabled);
       track.onended = () => {
         console.warn("Input video track ended!");
       };
+      
+      // Get input video dimensions from track settings
+      if (track.getSettings) {
+        const settings = track.getSettings();
+        if (settings.width && settings.height) {
+          this.inputVideoWidth = settings.width;
+          this.inputVideoHeight = settings.height;
+          // Update canvas to match input aspect ratio
+          this.canvas.width = this.inputVideoWidth;
+          this.canvas.height = this.inputVideoHeight;
+          console.log(`Input video dimensions: ${this.inputVideoWidth}x${this.inputVideoHeight}, canvas set to match`);
+        }
+      }
     });
     
     // Initialize connections
     this.init();
   }
 
+  configureCanvasTrack(track, fps) {
+    try {
+      if (!track) return;
+      // Hint that this is motion video (not text or detail)
+      if ('contentHint' in track) {
+        track.contentHint = 'motion';
+      }
+      // Try to honor desired frame rate
+      if (track.applyConstraints) {
+        track.applyConstraints({ frameRate: fps }).catch((e) => {
+          console.warn("Unable to apply canvas track constraints:", e);
+        });
+      }
+      // Basic diagnostics
+      console.log(`Configured canvas track: contentHint=${track.contentHint || 'n/a'}`);
+    } catch (e) {
+      console.warn("Error configuring canvas track:", e);
+    }
+  }
+
+  startFramePump(fps) {
+    // Clear any existing pump before starting a new one
+    if (this.framePumpIntervalId) {
+      clearInterval(this.framePumpIntervalId);
+      this.framePumpIntervalId = null;
+    }
+    const intervalMs = Math.max(10, Math.floor(1000 / (fps || 30)));
+    // Only start if we have a canvas track that supports requestFrame
+    const track = this.canvasTrack;
+    if (!track || typeof track.requestFrame !== 'function') {
+      return;
+    }
+    this.framePumpIntervalId = setInterval(() => {
+      try {
+        // Push the current canvas bitmap even if rAF is throttled/backgrounded
+        track.requestFrame();
+      } catch (e) {
+        // If requestFrame fails (e.g., track stopped), stop the pump
+        console.warn("requestFrame failed; stopping frame pump:", e);
+        clearInterval(this.framePumpIntervalId);
+        this.framePumpIntervalId = null;
+      }
+    }, intervalMs);
+  }
+
   drawLoadingState() {
     try {
-      console.log(`Drawing loading state: ${this.loadingState} on canvas ${this.canvas.width}x${this.canvas.height}`);
-
       if (!this.ctx) {
         console.error("Canvas context not available!");
         return;
@@ -122,59 +199,20 @@ class WhipWhepStream {
       // Save current context state for flipping
       this.ctx.save();
 
-      // Apply horizontal flip to compensate for Google Meet's mirroring
-      this.ctx.scale(-1, 1);
-      this.ctx.translate(-this.canvas.width, 0);
-
-      // Draw loading message
-      this.ctx.fillStyle = '#ffffff';
-      this.ctx.textAlign = 'center';
-      this.ctx.textBaseline = 'middle';
-
-      // Main loading message
-      this.ctx.font = 'bold 42px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-      this.ctx.fillText(this.loadingMessage, this.canvas.width / 2, this.canvas.height / 2 - 30);
-
-      // Sub message with current state
-      this.ctx.font = '30px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-      this.ctx.fillStyle = '#cccccc';
-      const subMessage = this.getSubMessage();
-      this.ctx.fillText(subMessage, this.canvas.width / 2, this.canvas.height / 2 + 20);
-
       // Draw a simple loading spinner (animated dots)
       this.drawLoadingSpinner();
 
       // Restore context state
       this.ctx.restore();
-
-      console.log("Loading state drawn successfully");
     } catch (error) {
       console.error("Error drawing loading state:", error);
     }
   }
 
-
-  getSubMessage() {
-    switch (this.loadingState) {
-      case 'initializing':
-        return 'Setting up camera connection...';
-      case 'connecting':
-        return 'Connecting to AI processing service...';
-      case 'processing':
-        return 'Firing up some 4090s...';
-      case 'ready':
-        return 'Virtual camera ready!';
-      case 'error':
-        return 'Connection error - check console for details';
-      default:
-        return 'Please wait...';
-    }
-  }
-
   drawLoadingSpinner() {
     const centerX = this.canvas.width / 2;
-    const centerY = this.canvas.height / 2 + 110;
-    const radius = 30;
+    const centerY = this.canvas.height / 2;
+    const radius = 50;
     const dotCount = 12;
     const dotRadius = 4;
 
@@ -376,9 +414,21 @@ class WhipWhepStream {
 
         // Set up the playing event listener
         this.video.onplaying = () => {
-          console.log(`Video dimensions: ${this.video.videoWidth}x${this.video.videoHeight}`);
-          this.canvas.width = this.video.videoWidth;
-          this.canvas.height = this.video.videoHeight;
+          console.log(`Processed video dimensions: ${this.video.videoWidth}x${this.video.videoHeight}`);
+          this.processedVideoWidth = this.video.videoWidth;
+          this.processedVideoHeight = this.video.videoHeight;
+          
+          // Keep canvas at input dimensions (don't resize to match square video)
+          // This ensures proper aspect ratio for preview
+          if (!this.inputVideoWidth || !this.inputVideoHeight) {
+            // Fallback: use default dimensions if input dimensions not available
+            this.canvas.width = 1280;
+            this.canvas.height = 720;
+          } else {
+            this.canvas.width = this.inputVideoWidth;
+            this.canvas.height = this.inputVideoHeight;
+          }
+          console.log(`Canvas dimensions: ${this.canvas.width}x${this.canvas.height} (input: ${this.inputVideoWidth}x${this.inputVideoHeight}, processed: ${this.processedVideoWidth}x${this.processedVideoHeight})`);
 
           // Update loading state to ready
           this.loadingState = 'ready';
@@ -470,18 +520,24 @@ class WhipWhepStream {
       }
     } else if (this.video.readyState >= this.video.HAVE_CURRENT_DATA) {
       try {
-        // Save current context state for flipping
-        this.ctx.save();
+        // Clear canvas first
+        this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+        
+        // Calculate centering for square video within wider canvas
+        const videoWidth = this.processedVideoWidth || this.video.videoWidth;
+        const videoHeight = this.processedVideoHeight || this.video.videoHeight;
+        
+        // Center the video within the canvas
+        // Scale to fit while maintaining aspect ratio
+        const scale = Math.min(this.canvas.width / videoWidth, this.canvas.height / videoHeight);
+        const scaledWidth = videoWidth * scale;
+        const scaledHeight = videoHeight * scale;
+        // Calculate center position
+        const centerX = (this.canvas.width - scaledWidth) / 2;
+        const centerY = (this.canvas.height - scaledHeight) / 2;
 
-        // Apply horizontal flip to compensate for Google Meet's mirroring
-        this.ctx.scale(-1, 1);
-        this.ctx.translate(-this.canvas.width, 0);
-
-        // Draw the video frame
-        this.ctx.drawImage(this.video, 0, 0, this.canvas.width, this.canvas.height);
-
-        // Restore context state
-        this.ctx.restore();
+        // Draw the video frame centered and scaled (no flip - Google Meet handles mirroring)
+        this.ctx.drawImage(this.video, centerX, centerY, scaledWidth, scaledHeight);
 
         // Log first few frames
         if (!this.frameCount) this.frameCount = 0;
@@ -568,28 +624,29 @@ class WhipWhepStream {
 
       const draw = () => {
         if (this.loadingState === 'ready') {
-          // Save current context state for flipping
-          ctx.save();
-
-          // Apply horizontal flip to compensate for Google Meet's mirroring
-          ctx.scale(-1, 1);
-          ctx.translate(-this.canvas.width, 0);
-
-          // Draw the video frame
+          // Draw the video frame (no flip - Google Meet handles mirroring)
           ctx.drawImage(video, 0, 0);
-
-          // Restore context state
-          ctx.restore();
         }
         requestAnimationFrame(draw);
       };
       draw();
     });
+
+    // Ensure the canvas track remains configured/pumped in passthrough
+    if (this.canvasTrack) {
+      this.configureCanvasTrack(this.canvasTrack, 30);
+      this.startFramePump(30);
+    }
   }
 
   destroy() {
     console.log("Destroying WhipWhepStream");
     this.destroyed = true;
+    // Stop frame pump if running
+    if (this.framePumpIntervalId) {
+      clearInterval(this.framePumpIntervalId);
+      this.framePumpIntervalId = null;
+    }
     
     // Stop all tracks in the output stream
     this.outputStream.getTracks().forEach(track => {
