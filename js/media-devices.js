@@ -129,7 +129,7 @@ async function createStream() {
       body: JSON.stringify({
         "pipeline_id": "pip_SD15",
         "pipeline_params": {
-          "seed": 529990,
+          "seed": 42,
           "delta": 0.7,
           "width": 512,
           "height": 512,
@@ -138,16 +138,15 @@ async function createStream() {
           "lora_dict": null,
           "ip_adapter": {
             "type": "regular",
-            "scale": 0.8,
-            "enabled": true,
-            "weight_type": "linear"
+            "scale": 0.5,
+            "enabled": true
           },
           "controlnets": [
             {
               "enabled": true,
               "model_id": "lllyasviel/control_v11f1p_sd15_depth",
               "preprocessor": "depth_tensorrt",
-              "conditioning_scale": 0.62,
+              "conditioning_scale": 0.59,
               "preprocessor_params": {},
               "control_guidance_end": 1,
               "control_guidance_start": 0
@@ -158,7 +157,7 @@ async function createStream() {
               "preprocessor": "feedback",
               "conditioning_scale": 0,
               "preprocessor_params": {
-                "feedback_strength": 0
+                "feedback_strength": 0.5
               },
               "control_guidance_end": 1,
               "control_guidance_start": 0
@@ -167,7 +166,7 @@ async function createStream() {
               "enabled": true,
               "model_id": "lllyasviel/control_v11p_sd15_canny",
               "preprocessor": "canny",
-              "conditioning_scale": 0,
+              "conditioning_scale": 0.27,
               "preprocessor_params": {
                 "low_threshold": 100,
                 "high_threshold": 200
@@ -180,19 +179,21 @@ async function createStream() {
           "acceleration": "tensorrt",
           "do_add_noise": true,
           "t_index_list": [
-            3,
-            8,
-            12,
-            17
+            11,
+            17,
+            23,
+            29
           ],
           "use_lcm_lora": true,
           "guidance_scale": 1,
-          "negative_prompt": "blurry, low quality, flat",
+          "negative_prompt": "blurry, low quality, flat, 2d",
+          "use_safety_checker": true,
           "num_inference_steps": 50,
           "use_denoising_batch": true,
           "normalize_seed_weights": true,
           "normalize_prompt_weights": true,
           "seed_interpolation_method": "linear",
+          "ip_adapter_style_image_url": "https://storage.googleapis.com/thom-vod-testing/style-presets/default_preset.png",
           "enable_similar_image_filter": false,
           "prompt_interpolation_method": "linear",
           "similar_image_filter_threshold": 0.98,
